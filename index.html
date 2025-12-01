@@ -1,0 +1,214 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OCR Matrix Mode – Moving Background</title>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+<style>
+/* CANVAS MATRIX BACKGROUND */
+#matrixCanvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -10;
+  background: black;
+}
+
+/* MAIN CONTENT */
+body {
+  margin: 0;
+  padding: 20px;
+  font-family: Courier New, monospace;
+  color: #00ff9d;
+}
+
+h2 {
+  text-align: center;
+  color: #00ff9d;
+  text-shadow: 0 0 10px #00ff9d;
+}
+
+.container {
+  max-width: 900px;
+  margin: auto;
+  padding: 20px;
+  background: rgba(0,0,0,0.65);
+  border-radius: 12px;
+  border: 1px solid #00ff9d55;
+  box-shadow: 0 0 25px #00ff9d55;
+  backdrop-filter: blur(4px);
+}
+
+.row {
+  display: flex;
+  gap: 20px;
+}
+
+#preview {
+  width: 180px;
+  border-radius: 10px;
+  border: 1px solid #00ff9d;
+  display: none;
+  box-shadow: 0 0 15px #00ff9d99;
+}
+
+#result {
+  flex: 1;
+  min-height: 450px;
+  padding: 15px;
+  background: rgba(0,0,0,0.45);
+  border: 1px solid #00ff9d55;
+  border-radius: 10px;
+  text-shadow: 0 0 6px #00ff9d;
+  white-space: pre-line;
+  overflow-y: auto;
+}
+
+.rn-highlight {
+  font-weight: bold;
+  font-size: 22px;
+  color: #00eaff;
+  text-shadow: 0 0 10px #00eaff;
+}
+
+.nominal-highlight {
+  font-weight: bold;
+  font-size: 22px;
+  color: #9eff00;
+  text-shadow: 0 0 10px #9eff00;
+}
+
+.paste-info {
+  text-align: center;
+  font-size: 14px;
+  color: #00ff9d;
+}
+</style>
+</head>
+
+<body>
+
+<!-- MATRIX ANIMATION -->
+<canvas id="matrixCanvas"></canvas>
+
+<h2>💾 Pastekan cs..... – Boleh cepat asal tepat!!!</h2>
+
+<div class="container">
+  <p class="paste-info">Copy bukti transfer → tekan <b>CTRL + V</b></p>
+
+  <div class="row">
+    <img id="preview">
+    <div id="result">Menunggu gambar…</div>
+  </div>
+</div>
+
+<script>
+/* ============================
+      MATRIX MOVING BACKGROUND
+   ============================ */
+const canvas = document.getElementById("matrixCanvas");
+const ctx = canvas.getContext("2d");
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+const chars = "アァカサタナハマヤャラワガザダバパイィキシチニヒミリヰギジヂビピウゥクスツヌフムユュルグズブヅプエェケセテネヘメレヱゲゼデベペオォコソトノホモヨョロヲゴゾドボポ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const fontSize = 18;
+const columns = canvas.width / fontSize;
+
+const drops = [];
+for (let i = 0; i < columns; i++) drops[i] = 1;
+
+function drawMatrix() {
+  ctx.fillStyle = "rgba(0,0,0,0.08)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = "#00ff9d";
+  ctx.font = fontSize + "px Courier New";
+
+  for (let i = 0; i < drops.length; i++) {
+    const char = chars[Math.floor(Math.random() * chars.length)];
+    ctx.fillText(char, i * fontSize, drops[i] * fontSize);
+
+    if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+      drops[i] = 0;
+    }
+    drops[i]++;
+  }
+}
+
+setInterval(drawMatrix, 45);
+
+/* Resize if window size changes */
+window.addEventListener("resize", () => {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+});
+
+/* ============================
+           OCR ENGINE
+   ============================ */
+
+function cleanOCR(text) {
+  let lines = text.split("\n");
+
+  const bannedWords = ["akses","hosting","bantuan","support","help","register","login","service"];
+
+  return lines
+    .map(l => l.replace(/[@®{}$%&•~<>°^+=_|[\]()]/g, ""))
+    .map(l => l.trim())
+    .filter(l => l.length > 2)
+    .filter(l => !bannedWords.some(b => l.toLowerCase().includes(b)));
+}
+
+function processData(lines) {
+  let result = [];
+
+  let dateTime = lines.find(l => /\d{1,2}\s+[A-Za-z]{3}\s+\d{4}\s+\d{2}:\d{2}/.test(l));
+  if (dateTime) result.push("⏰ Waktu & Tanggal: " + dateTime);
+
+  lines.forEach(line => {
+    if (/rrn/i.test(line)) result.push(`<span class="rn-highlight">${line}</span>`);
+    else if (/rp|idr|\d{1,3}(?:[.,]\d{3})+/.test(line.toLowerCase()))
+      result.push(`<span class="nominal-highlight">${line}</span>`);
+    else if (line !== dateTime) result.push(line);
+  });
+
+  return result.join("\n");
+}
+
+document.addEventListener("paste", function(event) {
+  const items = event.clipboardData.items;
+
+  for (let item of items) {
+    if (item.type.includes("image")) {
+      const blob = item.getAsFile();
+
+      document.getElementById("preview").src = URL.createObjectURL(blob);
+      document.getElementById("preview").style.display = "block";
+
+      runOCR(blob);
+    }
+  }
+});
+
+function runOCR(imgBlob) {
+  document.getElementById("result").innerHTML = "⏳ Membaca teks…";
+
+  Tesseract.recognize(imgBlob, "eng", { logger: m => console.log(m) })
+    .then(({ data:{ text } }) => {
+      const cleaned = cleanOCR(text);
+      const output = processData(cleaned);
+      document.getElementById("result").innerHTML = output;
+    });
+}
+</script>
+
+</body>
+</html>
